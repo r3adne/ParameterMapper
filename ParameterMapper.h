@@ -23,7 +23,7 @@ namespace ParameterMapper
 {
 
 
-struct ParameterMappingManager
+struct [[ maybe_unused ]] ParameterMappingManager
 {
     enum class Consume { ConsumeAllMessages, ConsumeMappedMessages, ConsumeNoMessages };
 
@@ -43,8 +43,9 @@ struct ParameterMappingManager
     using MappingPairType = std::atomic<Mapping>;
     Consume consume_setting = Consume::ConsumeNoMessages;
 
-    ParameterMappingManager() : Mappings(), DeletePool(), deletePoolWrite(DeletePool.begin()), deletePoolRead(DeletePool.begin()), temp_m(),
-                                map_from_cc(0, 127, 1)
+    ParameterMappingManager() : Mappings(), DeletePool(), deletePoolWrite(DeletePool.begin()),
+                                deletePoolRead(DeletePool.begin()), temp_m(), temp_cc{-1}, temp_ch{-1},
+                                map_from_cc(0, 127, 1), temp_mapping{nullptr, nullptr}
     {
         for (auto& a : Mappings)
         {

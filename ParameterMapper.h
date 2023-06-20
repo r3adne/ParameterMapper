@@ -187,6 +187,23 @@ private:
         }
     }
 
+    std::array<Mapping, MAX_MAPPINGS_PER_PARAMETER> getMappingsForCCAndChannel(int cc, int channel)
+    {
+        std::array<Mapping, MAX_MAPPINGS_PER_PARAMETER> op{};
+        std::copy(Mappings.begin() + (cc * channel), Mappings.begin() + (cc * channel) + MAX_MAPPINGS_PER_PARAMETER, op.begin());
+        return op;
+    }
+
+    Mapping getMappingWithGID(size_t gid)
+    {
+        return std::move(Mappings[gid]);
+    }
+
+    Mapping getMapping(int cc, int channel, int offset)
+    {
+        return std::move(*(Mappings.begin() + (cc * channel) + offset));
+    }
+
 };
 
 } // namespace ParameterMapper

@@ -43,7 +43,9 @@ struct [[ maybe_unused ]] ParameterMappingManager
     using MappingPairType = std::atomic<Mapping>;
     Consume consume_setting = Consume::ConsumeNoMessages;
 
-    ParameterMappingManager() : Mappings(), DeletePool(), deletePoolWrite(DeletePool.begin()),
+    int lastChangedCC, lastChangedChannel;
+
+    ParameterMappingManager() : lastChangedCC(-1), lastChangedChannel(-1), Mappings(), DeletePool(), deletePoolWrite(DeletePool.begin()),
                                 deletePoolRead(DeletePool.begin()), temp_m(), temp_cc{-1}, temp_ch{-1},
                                 map_from_cc(0, 127, 1), temp_mapping{nullptr, nullptr}
     {
@@ -183,6 +185,9 @@ private:
                         temp_mapping.param->endChangeGesture();
                     }
                 }
+
+                lastChangedCC = temp_cc;
+                lastChangedChannel = temp_ch;
             }
         }
     }

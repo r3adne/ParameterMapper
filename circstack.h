@@ -22,9 +22,8 @@ struct circstack
 
     std::array<T, N> buffer;
     size_t write = 0;
-    int overpop = 0;
 
-    bool push(T t)
+    void push(T t)
     {
         buffer[write] = t;
         ++write;
@@ -32,18 +31,18 @@ struct circstack
 
     //! pushes an array of Ts
     template <size_t n>
-    bool push(std::array<T, n> ts)
+    void push(std::array<T, n> ts)
     {
         push(ts.data(), ts.size());
     }
 
-    bool push(std::vector<T> ts)
+    void push(std::vector<T> ts)
     {
         push(ts.data(), ts.size());
     }
 
     //! pushes from the end of the array to the beginning, which makes more sense imho
-    bool push(T* tps, size_t num)
+    void push(T* tps, size_t num)
     {
         for (size_t i = num; i > 0; --i)
         {

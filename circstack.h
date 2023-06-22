@@ -5,8 +5,8 @@
 #ifndef WALDORF_WAVE_CONTROL_CIRCSTACK_H
 #define WALDORF_WAVE_CONTROL_CIRCSTACK_H
 
-#endif //WALDORF_WAVE_CONTROL_CIRCSTACK_H
-
+namespace ParameterMapper
+{
 
 /**
  * a stack which works within a circular buffer of memory, implementing the following operations:
@@ -61,3 +61,7 @@ struct circstack
     }
 
 };
+
+} // namespace ParameterMapper
+
+#endif //WALDORF_WAVE_CONTROL_CIRCSTACK_H

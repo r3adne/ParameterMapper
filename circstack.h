@@ -50,11 +50,9 @@ struct circstack
         }
     }
 
-
-
-
-
-//    T pop()
-
+    T pop()
+    {
+        return buffer[--write];
+    }
 
 };

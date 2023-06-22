@@ -18,6 +18,7 @@
 #define MAPPING_DELETE_POOL_SIZE 64
 
 #include <juce_audio_processors/juce_audio_processors.h>
+#include "circstack.h"
 
 namespace ParameterMapper
 {
@@ -43,9 +44,9 @@ struct [[ maybe_unused ]] ParameterMappingManager
     using MappingPairType = std::atomic<Mapping>;
     Consume consume_setting = Consume::ConsumeNoMessages;
 
-    int lastChangedCC, lastChangedChannel;
+    circstack<std::pair<int, int>, 512> lastChangedCCChannelPair;
 
-    ParameterMappingManager() : lastChangedCC(-1), lastChangedChannel(-1), Mappings(), DeletePool(), deletePoolWrite(DeletePool.begin()),
+    ParameterMappingManager() : Mappings(), DeletePool(), deletePoolWrite(DeletePool.begin()),
                                 deletePoolRead(DeletePool.begin()), temp_m(), temp_cc{-1}, temp_ch{-1},
                                 map_from_cc(0, 127, 1), temp_mapping{nullptr, nullptr}
     {
@@ -186,8 +187,10 @@ private:
                     }
                 }
 
-                lastChangedCC = temp_cc;
-                lastChangedChannel = temp_ch;
+                if (lastChangedCCChannelPair.top().first != temp_cc)
+                {
+                    lastChangedCCChannelPair.push(std::make_pair(temp_cc, temp_ch));
+                }
             }
         }
     }

@@ -55,4 +55,9 @@ struct circstack
         return buffer[--write];
     }
 
+    T top()
+    {
+        return buffer[write - 1];
+    }
+
 };

@@ -18,15 +18,22 @@ namespace ParameterMapper
 template <typename T, size_t N = 128>
 struct circstack
 {
-    circstack() = default;
+    circstack(T def)
+    {
+        buffer.fill(def);
+    }
 
     std::array<T, N> buffer;
-    size_t write = 0;
+    size_t write = 1;
 
     void push(T t)
     {
-        buffer[write] = t;
-        ++write;
+        buffer[write++] = t;
+
+        if (write == N)
+        {
+            write = 0;
+        }
     }
 
     //! pushes an array of Ts
@@ -52,12 +59,18 @@ struct circstack
 
     T pop()
     {
+        if (write == 0)
+        {
+            write = N - 1;
+        }
+
         return buffer[--write];
     }
 
     T top()
     {
-        return buffer[write - 1];
+        auto tmp = write == 0 ? N - 1 : write - 1;
+        return buffer[tmp];
     }
 
 };

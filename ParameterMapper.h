@@ -46,7 +46,7 @@ struct [[ maybe_unused ]] ParameterMappingManager
 
     circstack<std::pair<int, int>, 512> lastChangedCCChannelPair;
 
-    ParameterMappingManager() : Mappings(), DeletePool(), deletePoolWrite(DeletePool.begin()),
+    ParameterMappingManager() : lastChangedCCChannelPair(std::make_pair(0, 0)), Mappings(), DeletePool(), deletePoolWrite(DeletePool.begin()),
                                 deletePoolRead(DeletePool.begin()), temp_m(), temp_cc{-1}, temp_ch{-1},
                                 map_from_cc(0, 127, 1), temp_mapping{nullptr, nullptr}
     {

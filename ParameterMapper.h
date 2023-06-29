@@ -28,7 +28,7 @@ struct [[ maybe_unused ]] ParameterMappingManager
 {
     enum class Consume { ConsumeAllMessages, ConsumeMappedMessages, ConsumeNoMessages };
 
-    using ParameterType = juce::AudioProcessorParameter;
+    using ParameterType = juce::AudioProcessorParameterWithID;
 
     struct Mapping
     {

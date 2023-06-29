@@ -67,6 +67,42 @@ struct [[ maybe_unused ]] ParameterMappingManager
         }
     }
 
+
+    std::array<Mapping, MAX_MAPPINGS_PER_PARAMETER> getMappingsForCCAndChannel(int cc, int channel)
+    {
+        std::array<Mapping, MAX_MAPPINGS_PER_PARAMETER> op{};
+
+        for (size_t k = cc * channel; k < (cc * channel) + MAX_MAPPINGS_PER_PARAMETER; ++k)
+        {
+            op[k] = Mappings[k].load();
+        }
+
+        return op;
+    }
+
+    Mapping getMappingWithGID(size_t gid)
+    {
+        return std::move(Mappings[gid]);
+    }
+
+    Mapping getMapping(int cc, int channel, int offset)
+    {
+        return std::move(*(Mappings.begin() + (cc * channel) + offset));
+    }
+
+    //! returns an array of all mappings
+    std::array<Mapping, MAX_MAPPINGS_PER_PARAMETER * 16 * 128> getAllMappings()
+    {
+        std::array<Mapping, MAX_MAPPINGS_PER_PARAMETER * 16 * 128> op;
+
+        for (size_t i = 0; i < op.size(); ++i)
+        {
+            op[i] = Mappings[i].load();
+        }
+
+        return op;
+    }
+
 private:
 
     // Because we want the `Process()` callback to occur on a realtime thread, we must ensure that our way of fetching and setting mappings is realtime safe. As such we'll just use an array for this.
@@ -194,24 +230,6 @@ private:
             }
         }
     }
-
-    std::array<Mapping, MAX_MAPPINGS_PER_PARAMETER> getMappingsForCCAndChannel(int cc, int channel)
-    {
-        std::array<Mapping, MAX_MAPPINGS_PER_PARAMETER> op{};
-        std::copy(Mappings.begin() + (cc * channel), Mappings.begin() + (cc * channel) + MAX_MAPPINGS_PER_PARAMETER, op.begin());
-        return op;
-    }
-
-    Mapping getMappingWithGID(size_t gid)
-    {
-        return std::move(Mappings[gid]);
-    }
-
-    Mapping getMapping(int cc, int channel, int offset)
-    {
-        return std::move(*(Mappings.begin() + (cc * channel) + offset));
-    }
-
-};
+    };
 
 } // namespace ParameterMapper

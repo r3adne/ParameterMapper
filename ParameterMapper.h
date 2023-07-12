@@ -14,8 +14,9 @@
     END_JUCE_MODULE_DECLARATION
 *******************************************************************************/
 
-#define MAX_MAPPINGS_PER_PARAMETER 8
-#define MAPPING_DELETE_POOL_SIZE 64
+#define NUM_CCS 16
+#define MAX_NUM_PARAMETERS 128
+#define MAPPING_DELETE_POOL_SIZE 1000
 
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "circstack.h"
@@ -28,31 +29,49 @@ struct [[ maybe_unused ]] ParameterMappingManager
 {
     enum class Consume { ConsumeAllMessages, ConsumeMappedMessages, ConsumeNoMessages };
 
+    Consume consume_setting = Consume::ConsumeNoMessages;
+
     using ParameterType = juce::AudioProcessorParameterWithID;
 
     struct Mapping
     {
-//        Mapping(ParameterType* p, juce::NormalisableRange<float>* r) : param(p), range(r) { }
-
         //! We use a raw pointer here because it references the parameter owned by the Processor
         ParameterType* param;
 
-        //! We use a raw pointer here because the mapping needs to be trivially copyable, and NormalisableRange isn't. In this case, we'll need to delete these on our own.
-        juce::NormalisableRange<float>* range;
+        juce::NormalisableRange<float> range;
+
+        int cc;
+
+        bool isValid = false;
     };
 
-    using MappingPairType = std::atomic<Mapping>;
-    Consume consume_setting = Consume::ConsumeNoMessages;
+    using pMappingType = std::atomic<Mapping*>;
 
-    circstack<std::pair<int, int>, 512> lastChangedCCChannelPair;
+    circstack<int, 512> lastChangedCC;
 
-    ParameterMappingManager() : lastChangedCCChannelPair(std::make_pair(0, 0)), Mappings(), DeletePool(), deletePoolWrite(DeletePool.begin()),
-                                deletePoolRead(DeletePool.begin()), temp_m(), temp_cc{-1}, temp_ch{-1},
-                                map_from_cc(0, 127, 1), temp_mapping{nullptr, nullptr}
+private:
+
+    std::array<pMappingType, NUM_CCS * MAX_NUM_PARAMETERS> Mappings;
+
+    //! This is just a pool of pointers pointing to mappings we need to delete on the message thread, as deleting them on the audio thread isn't safe.
+    std::array<size_t, MAPPING_DELETE_POOL_SIZE> DeletePool;
+    size_t deletePoolWrite = 0, deletePoolRead = 0;
+
+    // used in the process loop
+    juce::MidiMessage temp_m;
+    int temp_cc, temp_ch;
+    juce::NormalisableRange<float> map_from_cc;
+    Mapping temp_mapping;
+
+
+public:
+
+    ParameterMappingManager() : lastChangedCC(-1), Mappings(), DeletePool(), temp_m(), temp_cc{-1}, temp_ch{-1},
+                                map_from_cc(0, 127, 1), temp_mapping{nullptr, {0, 127}, -1}
     {
         for (auto& a : Mappings)
         {
-            a.store({nullptr, nullptr});
+            a.store(nullptr);
         }
     }
 
@@ -63,37 +82,30 @@ struct [[ maybe_unused ]] ParameterMappingManager
 
         for (auto& a : Mappings)
         {
-            delete a.load().range;
+            delete a.load();
         }
     }
 
 
-    std::array<Mapping, MAX_MAPPINGS_PER_PARAMETER> getMappingsForCCAndChannel(int cc, int channel)
+//    // probably not necessary
+//    std::array<Mapping, MAX_NUM_PARAMETERS> getMappingsForCC(int cc)
+//    {
+//        std::array<pMappingType, MAX_NUM_PARAMETERS> op;
+//
+//        std::copy(Mappings.begin() + MAX_NUM_PARAMETERS * cc, (Mappings.begin() + MAX_NUM_PARAMETERS * cc) + MAX_NUM_PARAMETERS, op.begin());
+//        return op;
+//    }
+
+    Mapping getMapping(int cc, int paramoffset)
     {
-        std::array<Mapping, MAX_MAPPINGS_PER_PARAMETER> op{};
-
-        for (size_t k = cc * channel; k < (cc * channel) + MAX_MAPPINGS_PER_PARAMETER; ++k)
-        {
-            op[k] = Mappings[k].load();
-        }
-
-        return op;
+        return std::move(*(Mappings.begin() + cc * paramoffset)->load());
     }
 
-    Mapping getMappingWithGID(size_t gid)
-    {
-        return std::move(Mappings[gid]);
-    }
 
-    Mapping getMapping(int cc, int channel, int offset)
+    //! returns an array of all mappings... note that the pointers (param, and more likely range, can be invalidated)
+    std::array<Mapping, MAX_MAPPINGS> getAllMappings()
     {
-        return std::move(*(Mappings.begin() + (cc * channel) + offset));
-    }
-
-    //! returns an array of all mappings
-    std::array<Mapping, MAX_MAPPINGS_PER_PARAMETER * 16 * 128> getAllMappings()
-    {
-        std::array<Mapping, MAX_MAPPINGS_PER_PARAMETER * 16 * 128> op;
+        std::array<Mapping, MAX_MAPPINGS> op;
 
         for (size_t i = 0; i < op.size(); ++i)
         {
@@ -105,25 +117,16 @@ struct [[ maybe_unused ]] ParameterMappingManager
 
 private:
 
-    // Because we want the `Process()` callback to occur on a realtime thread, we must ensure that our way of fetching and setting mappings is realtime safe. As such we'll just use an array for this.
-    std::array<MappingPairType, MAX_MAPPINGS_PER_PARAMETER * 16 * 128> Mappings;
-
-    //! This is just a pool of pointers pointing to mappings we need to delete on the message thread, as deleting them on the audio thread isn't safe.
-    std::array<MappingPairType, MAPPING_DELETE_POOL_SIZE> DeletePool;
-    MappingPairType *deletePoolWrite, *deletePoolRead;
-
-    // used in the process loop
-    juce::MidiMessage temp_m;
-    int temp_cc, temp_ch;
-    juce::NormalisableRange<float> map_from_cc;
-    Mapping temp_mapping;
-
-    MappingPairType* getFirstNullMapping(int cc, int channel)
+    MappingPairType* getFirstNullMapping()
     {
-        for (auto a = Mappings.begin() + (cc * channel); a != Mappings.begin() + (cc * channel) + MAX_MAPPINGS_PER_PARAMETER; ++a)
+        for (auto a = Mappings.begin(); a != Mappings.end(); ++a)
         {
-            if (! a->load().param) return a;
+            if (! a->load().param)
+            {
+                return a;
+            }
         }
+
         return nullptr;
     }
 
@@ -131,15 +134,15 @@ private:
     // call this on the message thread
     [[ maybe_unused ]] void addParameterMapping (ParameterType* parameter_to_map, juce::NormalisableRange<float> mapping_range, int cc, int channel)
     {
-        jassert(juce::isPositiveAndBelow(cc, 127));
+        jassert(juce::isPositiveAndBelow(cc+1, 128));
         jassert(juce::isPositiveAndBelow(channel, 16));
 
-        auto m = getFirstNullMapping(cc, channel);
+        auto m = getFirstNullMapping();
 
         // deleted upon removeParameterMapping or when this manager is deleted
         auto* range = new juce::NormalisableRange<float>(std::move(mapping_range));
 
-        auto map = Mapping{parameter_to_map, range};
+        auto map = Mapping{parameter_to_map, range, cc, channel};
 
         m->store(map);
     }
@@ -170,6 +173,8 @@ private:
         return count;
     }
 
+
+    // todo: update removeParameterMappings
     //! Removes all parameter mappings for a given parameter on a given cc and channel
     template <bool is_on_realtime_thread>
     [[ maybe_unused ]] void removeParameterMappings(ParameterType* parameter_to_map, int cc, int channel)
@@ -185,6 +190,7 @@ private:
         }
     }
 
+//    todo: update removeParameterMappings
     //! Removes all parameter mappings for a given cc and channel
     template <bool is_on_realtime_thread>
     [[ maybe_unused ]] void removeParameterMappings(int cc, int channel)
@@ -197,7 +203,7 @@ private:
         }
     }
 
-
+//    todo: update Process
     //! Call this at the beginning of your processing loop.
     inline void Process (juce::MidiBuffer& buffer) noexcept
     {

@@ -102,9 +102,7 @@ public:
         return *Mappings[cc * paramoffset].load();
     }
 
-
-private:
-
+    
     // call this on the message thread
     [[ maybe_unused ]] void addParameterMapping (ParameterType* parameter_to_map, juce::NormalisableRange<float> mapping_range, size_t cc)
     {
@@ -133,6 +131,8 @@ private:
     {
         Mappings[index].load()->isValid = false;
     }
+
+private:
 
     //! Call this at the beginning of your processing loop.
     inline void Process (juce::MidiBuffer& buffer) noexcept

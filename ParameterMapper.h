@@ -19,6 +19,8 @@
 #define MAPPING_DELETE_POOL_SIZE 1000
 
 #include <juce_audio_processors/juce_audio_processors.h>
+
+#include <utility>
 #include "circstack.h"
 
 namespace ParameterMapper
@@ -35,6 +37,17 @@ struct [[ maybe_unused ]] ParameterMappingManager
 
     struct Mapping
     {
+        Mapping(ParameterType* prm, juce::NormalisableRange<float> r, int ccnum) : param(prm), range(std::move(r)), cc(ccnum) {}
+
+        //! this could be weird, but in this context `isValid` won't really be used
+        Mapping(Mapping& m)
+        {
+            param = m.param;
+            range = m.range;
+            cc = m.cc;
+            isValid.store(m.isValid.load());
+        }
+
         //! We use a raw pointer here because it references the parameter owned by the Processor
         ParameterType* param;
 
@@ -42,7 +55,7 @@ struct [[ maybe_unused ]] ParameterMappingManager
 
         int cc;
 
-        bool isValid = false;
+        std::atomic<bool> isValid = false;
     };
 
     using pMappingType = std::atomic<Mapping*>;
@@ -51,24 +64,23 @@ struct [[ maybe_unused ]] ParameterMappingManager
 
 private:
 
+    juce::StringArray mappableParamIDs;
     std::array<pMappingType, NUM_CCS * MAX_NUM_PARAMETERS> Mappings;
-
-    //! This is just a pool of pointers pointing to mappings we need to delete on the message thread, as deleting them on the audio thread isn't safe.
-    std::array<size_t, MAPPING_DELETE_POOL_SIZE> DeletePool;
-    size_t deletePoolWrite = 0, deletePoolRead = 0;
 
     // used in the process loop
     juce::MidiMessage temp_m;
-    int temp_cc, temp_ch;
+    size_t temp_cc;
     juce::NormalisableRange<float> map_from_cc;
-    Mapping temp_mapping;
+    Mapping* temp_mapping;
 
+    int start_cc = 111;
 
 public:
 
-    ParameterMappingManager() : lastChangedCC(-1), Mappings(), DeletePool(), temp_m(), temp_cc{-1}, temp_ch{-1},
-                                map_from_cc(0, 127, 1), temp_mapping{nullptr, {0, 127}, -1}
+    explicit ParameterMappingManager(juce::StringArray& _mappableParamIDs) : lastChangedCC(-1), mappableParamIDs(_mappableParamIDs), Mappings(), temp_m(), temp_cc{0},
+                                map_from_cc(0, 127, 1), temp_mapping{nullptr}
     {
+
         for (auto& a : Mappings)
         {
             a.store(nullptr);
@@ -78,8 +90,6 @@ public:
 
     ~ParameterMappingManager()
     {
-        removeAll();
-
         for (auto& a : Mappings)
         {
             delete a.load();
@@ -87,123 +97,43 @@ public:
     }
 
 
-//    // probably not necessary
-//    std::array<Mapping, MAX_NUM_PARAMETERS> getMappingsForCC(int cc)
-//    {
-//        std::array<pMappingType, MAX_NUM_PARAMETERS> op;
-//
-//        std::copy(Mappings.begin() + MAX_NUM_PARAMETERS * cc, (Mappings.begin() + MAX_NUM_PARAMETERS * cc) + MAX_NUM_PARAMETERS, op.begin());
-//        return op;
-//    }
-
-    Mapping getMapping(int cc, int paramoffset)
+    [[ maybe_unused ]] Mapping getMapping(size_t cc, size_t paramoffset)
     {
-        return std::move(*(Mappings.begin() + cc * paramoffset)->load());
+        return *Mappings[cc * paramoffset].load();
     }
 
-
-    //! returns an array of all mappings... note that the pointers (param, and more likely range, can be invalidated)
-    std::array<Mapping, MAX_MAPPINGS> getAllMappings()
-    {
-        std::array<Mapping, MAX_MAPPINGS> op;
-
-        for (size_t i = 0; i < op.size(); ++i)
-        {
-            op[i] = Mappings[i].load();
-        }
-
-        return op;
-    }
 
 private:
 
-    MappingPairType* getFirstNullMapping()
+    // call this on the message thread
+    [[ maybe_unused ]] void addParameterMapping (ParameterType* parameter_to_map, juce::NormalisableRange<float> mapping_range, size_t cc)
     {
-        for (auto a = Mappings.begin(); a != Mappings.end(); ++a)
+        auto* mp = new Mapping(parameter_to_map, std::move(mapping_range), static_cast<int>(cc));
+
+        auto idx = mappableParamIDs.indexOf(parameter_to_map->getParameterID());
+
+        if (idx == -1)
         {
-            if (! a->load().param)
-            {
-                return a;
-            }
+            delete mp;
+            return;
         }
 
-        return nullptr;
+        Mappings[static_cast<size_t>(idx) * cc].store(mp);
+
+        mp->isValid.store(true);
     }
 
-
-    // call this on the message thread
-    [[ maybe_unused ]] void addParameterMapping (ParameterType* parameter_to_map, juce::NormalisableRange<float> mapping_range, int cc, int channel)
+    [[ maybe_unused ]] void deleteMapping(size_t cc, size_t paramoffset)
     {
-        jassert(juce::isPositiveAndBelow(cc+1, 128));
-        jassert(juce::isPositiveAndBelow(channel, 16));
-
-        auto m = getFirstNullMapping();
-
-        // deleted upon removeParameterMapping or when this manager is deleted
-        auto* range = new juce::NormalisableRange<float>(std::move(mapping_range));
-
-        auto map = Mapping{parameter_to_map, range, cc, channel};
-
-        m->store(map);
+        deleteMapping(cc * paramoffset);
     }
-
 
     // realtime safe
-    void markForRemoval(MappingPairType* m)
+    void deleteMapping(size_t index)
     {
-        deletePoolWrite = m;
-        ++deletePoolWrite;
-        if (deletePoolWrite == DeletePool.end()) deletePoolWrite = DeletePool.begin();
-        // note that overflows here aren't thrown or asserted, just don't let that happen :3
+        Mappings[index].load()->isValid = false;
     }
 
-
-    // not realtime safe!
-    int removeAll()
-    {
-        int count = 0;
-        while (deletePoolRead != deletePoolWrite)
-        {
-            delete deletePoolRead->load().range;
-            delete deletePoolRead;
-            ++deletePoolRead;
-            if (deletePoolRead == DeletePool.end()) deletePoolRead = DeletePool.begin();
-            ++count;
-        }
-        return count;
-    }
-
-
-    // todo: update removeParameterMappings
-    //! Removes all parameter mappings for a given parameter on a given cc and channel
-    template <bool is_on_realtime_thread>
-    [[ maybe_unused ]] void removeParameterMappings(ParameterType* parameter_to_map, int cc, int channel)
-    {
-        for (auto a = Mappings.begin() + (cc * channel); a != Mappings.begin() + (cc * channel) + MAX_MAPPINGS_PER_PARAMETER; ++a)
-        {
-            if (a->load().param == parameter_to_map)
-            {
-                markForRemoval(a);
-
-                if (! is_on_realtime_thread) removeAll();
-            }
-        }
-    }
-
-//    todo: update removeParameterMappings
-    //! Removes all parameter mappings for a given cc and channel
-    template <bool is_on_realtime_thread>
-    [[ maybe_unused ]] void removeParameterMappings(int cc, int channel)
-    {
-        for (auto a = Mappings.begin() + (cc * channel); a != Mappings.begin() + (cc * channel) + MAX_MAPPINGS_PER_PARAMETER; ++a)
-        {
-            markForRemoval(a);
-
-            if (! is_on_realtime_thread) removeAll();
-        }
-    }
-
-//    todo: update Process
     //! Call this at the beginning of your processing loop.
     inline void Process (juce::MidiBuffer& buffer) noexcept
     {
@@ -213,25 +143,20 @@ private:
 
             if (temp_m.isController())
             {
-                temp_cc = temp_m.getControllerNumber();
-                temp_ch = temp_m.getChannel();
+                temp_cc = static_cast<size_t>(temp_m.getControllerNumber());
 
-                for (auto m = Mappings.begin() + (temp_cc * temp_ch); m != Mappings.begin() + (temp_cc * temp_ch) + MAX_MAPPINGS_PER_PARAMETER; ++m)
+                for (size_t m = (temp_cc * MAX_NUM_PARAMETERS); m != ((temp_cc + 1) * MAX_NUM_PARAMETERS); ++m)
                 {
-                    temp_mapping = m->load();
-                    if (temp_mapping.param != nullptr)
+                    temp_mapping = Mappings[m].load();
+
+                    if (temp_mapping->param != nullptr && temp_mapping->isValid)
                     {
-                        temp_mapping.param->beginChangeGesture();
-                        temp_mapping.param->setValueNotifyingHost( temp_mapping.range->convertTo0to1(
+                        temp_mapping->param->beginChangeGesture();
+                        temp_mapping->param->setValueNotifyingHost( temp_mapping->range.convertTo0to1(
                                                                                     map_from_cc.convertTo0to1(
                                                                                             static_cast<float>(temp_m.getControllerValue()))));
-                        temp_mapping.param->endChangeGesture();
+                        temp_mapping->param->endChangeGesture();
                     }
-                }
-
-                if (lastChangedCCChannelPair.top().first != temp_cc)
-                {
-                    lastChangedCCChannelPair.push(std::make_pair(temp_cc, temp_ch));
                 }
             }
         }

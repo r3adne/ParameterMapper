@@ -62,6 +62,8 @@ struct [[ maybe_unused ]] ParameterMappingManager
 
     circstack<int, 512> lastChangedCC;
 
+    int start_cc = 111;
+
 private:
 
     juce::StringArray mappableParamIDs;
@@ -73,7 +75,6 @@ private:
     juce::NormalisableRange<float> map_from_cc;
     Mapping* temp_mapping;
 
-    int start_cc = 111;
 
 public:
 
@@ -97,9 +98,9 @@ public:
     }
 
 
-    [[ maybe_unused ]] Mapping getMapping(size_t cc, size_t paramoffset)
+    [[ maybe_unused ]] Mapping* getMapping(size_t cc, size_t paramoffset)
     {
-        return *Mappings[cc * paramoffset].load();
+        return Mappings[cc + paramoffset].load();
     }
 
     

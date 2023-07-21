@@ -102,7 +102,6 @@ public:
     {
         return Mappings[cc + paramoffset].load();
     }
-
     
     // call this on the message thread
     [[ maybe_unused ]] void addParameterMapping (ParameterType* parameter_to_map, juce::NormalisableRange<float> mapping_range, size_t cc)

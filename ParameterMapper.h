@@ -116,7 +116,7 @@ public:
             return;
         }
 
-        Mappings[static_cast<size_t>(idx * ((cc - start_cc) * MAX_NUM_PARAMETERS))].store(mp);
+        Mappings[static_cast<size_t>(idx + ((cc - start_cc + 1) * MAX_NUM_PARAMETERS))].store(mp);
 
         mp->isValid.store(true);
     }

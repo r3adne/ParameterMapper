@@ -100,7 +100,7 @@ public:
 
     [[ maybe_unused ]] Mapping* getMapping(size_t cc, size_t paramoffset)
     {
-        return Mappings[cc + paramoffset].load();
+        return Mappings[((cc - static_cast<size_t>(start_cc)) * MAX_NUM_PARAMETERS) + paramoffset].load();
     }
     
     // call this on the message thread
@@ -116,14 +116,14 @@ public:
             return;
         }
 
-        Mappings[static_cast<size_t>(idx) * cc].store(mp);
+        Mappings[static_cast<size_t>(idx * ((cc - start_cc) * MAX_NUM_PARAMETERS))].store(mp);
 
         mp->isValid.store(true);
     }
 
     [[ maybe_unused ]] void deleteMapping(size_t cc, size_t paramoffset)
     {
-        deleteMapping(cc * paramoffset);
+        deleteMapping(((cc - static_cast<size_t>(start_cc) + 1) * MAX_NUM_PARAMETERS) + paramoffset);
     }
 
     // realtime safe

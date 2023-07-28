@@ -116,14 +116,20 @@ public:
             return;
         }
 
-        Mappings[static_cast<size_t>(idx + ((cc - start_cc + 1) * MAX_NUM_PARAMETERS))].store(mp);
+        auto* old = Mappings[static_cast<size_t>(static_cast<size_t>(idx) + ((cc - static_cast<size_t>(start_cc)) * MAX_NUM_PARAMETERS))].load();
+        if (old && old->isValid.load())
+        {
+            delete old;
+        }
+
+        Mappings[static_cast<size_t>(static_cast<size_t>(idx) + ((cc - static_cast<size_t>(start_cc)) * MAX_NUM_PARAMETERS))].store(mp);
 
         mp->isValid.store(true);
     }
 
     [[ maybe_unused ]] void deleteMapping(size_t cc, size_t paramoffset)
     {
-        deleteMapping(((cc - static_cast<size_t>(start_cc) + 1) * MAX_NUM_PARAMETERS) + paramoffset);
+        deleteMapping(((cc - static_cast<size_t>(start_cc)) * MAX_NUM_PARAMETERS) + paramoffset);
     }
 
     // realtime safe

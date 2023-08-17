@@ -39,6 +39,19 @@ struct [[ maybe_unused ]] ParameterMappingManager
     {
         Mapping(ParameterType* prm, juce::NormalisableRange<float> r, int ccnum) : param(prm), range(std::move(r)), cc(ccnum) {}
 
+        // deserializes a string made by serialize().
+        Mapping(const juce::String& ser, juce::AudioProcessorValueTreeState& vt)
+        {
+            juce::String _ser = ser;
+            cc = _ser.upToFirstOccurrenceOf(";", false, false).getIntValue();
+            _ser = _ser.fromFirstOccurrenceOf(";", false, false);
+            range.start = static_cast<float>(_ser.upToFirstOccurrenceOf(";", false, false).getIntValue());
+            _ser = _ser.fromFirstOccurrenceOf(";", false, false);
+            range.end = static_cast<float>(_ser.upToFirstOccurrenceOf(";", false, false).getIntValue());
+            _ser = _ser.fromFirstOccurrenceOf(";", false, false);
+            param = vt.getParameter(_ser.removeCharacters(";"));
+        }
+
         //! this could be weird, but in this context `isValid` won't really be used
         Mapping(Mapping& m)
         {
@@ -56,6 +69,22 @@ struct [[ maybe_unused ]] ParameterMappingManager
         int cc;
 
         std::atomic<bool> isValid = false;
+
+        juce::String serialize() const
+        {
+            juce::String ser = "";
+
+            ser += juce::String(cc).paddedLeft('0', 3);
+            ser += ";";
+            ser += juce::String(static_cast<int>(round(range.start))).paddedLeft('0', 3);
+            ser += ";";
+            ser += juce::String(static_cast<int>(round(range.end))).paddedLeft('0', 3);
+            ser += ";";
+            ser += juce::String(param->paramID);
+
+            DBG(ser);
+            return ser;
+        }
     };
 
     using pMappingType = std::atomic<Mapping*>;
@@ -65,6 +94,8 @@ struct [[ maybe_unused ]] ParameterMappingManager
     int start_cc = 111;
 
 private:
+
+    juce::AudioProcessorValueTreeState& apvts;
 
     juce::StringArray mappableParamIDs;
     std::array<pMappingType, NUM_CCS * MAX_NUM_PARAMETERS> Mappings;
@@ -78,7 +109,7 @@ private:
 
 public:
 
-    explicit ParameterMappingManager(juce::StringArray& _mappableParamIDs) : lastChangedCC(-1), mappableParamIDs(_mappableParamIDs), Mappings(), temp_m(), temp_cc{0},
+    explicit ParameterMappingManager(juce::StringArray& _mappableParamIDs, juce::AudioProcessorValueTreeState& _apvts) : lastChangedCC(-1), apvts(_apvts), mappableParamIDs(_mappableParamIDs), Mappings(), temp_m(), temp_cc{0},
                                 map_from_cc(0, 127, 1), temp_mapping{nullptr}
     {
 
@@ -138,11 +169,43 @@ public:
         Mappings[index].load()->isValid = false;
     }
 
+    void serialize(juce::XmlElement& el)
+    {
+        el.setTagName("mappings");
+
+        for (size_t i = 0; i < Mappings.size(); ++i)
+        {
+            auto* a = Mappings[i].load();
+            if (a && a->isValid)
+            {
+                auto* newel = juce::XmlElement::createTextElement(a->serialize());
+                newel->setTagName("mapping_" + juce::String(i));
+                el.addChildElement(newel);
+            }
+        }
+
+
+    }
+
+    void deserialize(juce::XmlElement& el)
+    {
+        jassert(el.hasTagName("mappings"));
+
+        for (auto* child : el.getChildIterator())
+        {
+            DBG(child->toString({}));
+
+            auto m = Mapping(child->getStringAttribute("text"), apvts);
+
+        }
+    }
+
 private:
 
     //! Call this at the beginning of your processing loop.
-    inline void Process (juce::MidiBuffer& buffer) noexcept
+    [[ maybe_unused ]] inline bool Process (juce::MidiBuffer& buffer) noexcept
     {
+        bool retflag = false;
         for (auto a : buffer)
         {
             temp_m = a.getMessage();
@@ -154,7 +217,7 @@ private:
                 for (size_t m = (temp_cc * MAX_NUM_PARAMETERS); m != ((temp_cc + 1) * MAX_NUM_PARAMETERS); ++m)
                 {
                     temp_mapping = Mappings[m].load();
-
+                    retflag = true;
                     if (temp_mapping->param != nullptr && temp_mapping->isValid)
                     {
                         temp_mapping->param->beginChangeGesture();
@@ -166,6 +229,7 @@ private:
                 }
             }
         }
+        return retflag;
     }
     };
 

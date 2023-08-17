@@ -200,7 +200,6 @@ public:
         }
     }
 
-private:
 
     //! Call this at the beginning of your processing loop.
     [[ maybe_unused ]] inline bool Process (juce::MidiBuffer& buffer) noexcept

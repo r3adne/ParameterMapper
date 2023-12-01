@@ -91,7 +91,7 @@ struct [[ maybe_unused ]] ParameterMappingManager
 
     circstack<int, 512> lastChangedCC;
 
-    int start_cc = 111;
+    int start_cc = 90;
 
 private:
 
@@ -147,15 +147,25 @@ public:
             return;
         }
 
-        auto* old = Mappings[static_cast<size_t>(static_cast<size_t>(idx) + ((cc - static_cast<size_t>(start_cc)) * MAX_NUM_PARAMETERS))].load();
-        if (old && old->isValid.load())
+        if (cc < start_cc + NUM_CCS && cc >= start_cc)
         {
-            delete old;
+            auto *old = Mappings[static_cast<size_t>(static_cast<size_t>(idx) + ((cc - static_cast<size_t>(start_cc)) *
+                                                                                 MAX_NUM_PARAMETERS))].load();
+
+            if (old && old->isValid.load())
+            {
+                delete old;
+            }
+
+            Mappings[static_cast<size_t>(static_cast<size_t>(idx) +
+                                         ((cc - static_cast<size_t>(start_cc)) * MAX_NUM_PARAMETERS))].store(mp);
+
+            mp->isValid.store(true);
         }
-
-        Mappings[static_cast<size_t>(static_cast<size_t>(idx) + ((cc - static_cast<size_t>(start_cc)) * MAX_NUM_PARAMETERS))].store(mp);
-
-        mp->isValid.store(true);
+        else
+        {
+            DBG("cc provided to mapper was not in range");
+        }
     }
 
     [[ maybe_unused ]] void deleteMapping(size_t cc, size_t paramoffset)
@@ -213,16 +223,23 @@ public:
             {
                 temp_cc = static_cast<size_t>(temp_m.getControllerNumber());
 
-                for (size_t m = (temp_cc * MAX_NUM_PARAMETERS); m != ((temp_cc + 1) * MAX_NUM_PARAMETERS); ++m)
+
+                if (temp_cc == 1 || temp_cc == 64 || temp_cc == 6 || temp_cc == 4) continue;
+                if (temp_cc < static_cast<size_t>(start_cc) || temp_cc > (static_cast<size_t>(start_cc) + NUM_CCS)) continue;
+
+                // todo: fix this here
+                for (size_t m = ((temp_cc - static_cast<size_t>(start_cc)) * MAX_NUM_PARAMETERS); m != ((temp_cc - static_cast<size_t>(start_cc)) * MAX_NUM_PARAMETERS) + MAX_NUM_PARAMETERS; ++m)
                 {
                     temp_mapping = Mappings[m].load();
-                    retflag = true;
+
+                    if (! temp_mapping) continue; // can't return here
+
+                    retflag = true; // simply indicates that process did change a parameter
+
                     if (temp_mapping->param != nullptr && temp_mapping->isValid)
                     {
                         temp_mapping->param->beginChangeGesture();
-                        temp_mapping->param->setValueNotifyingHost( temp_mapping->range.convertTo0to1(
-                                                                                    map_from_cc.convertTo0to1(
-                                                                                            static_cast<float>(temp_m.getControllerValue()))));
+                        temp_mapping->param->setValueNotifyingHost(map_from_cc.convertTo0to1( static_cast<float>(temp_m.getControllerValue())));
                         temp_mapping->param->endChangeGesture();
                     }
                 }

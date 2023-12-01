@@ -239,7 +239,9 @@ public:
                     if (temp_mapping->param != nullptr && temp_mapping->isValid)
                     {
                         temp_mapping->param->beginChangeGesture();
-                        temp_mapping->param->setValueNotifyingHost(map_from_cc.convertTo0to1( static_cast<float>(temp_m.getControllerValue())));
+                        auto v =  map_from_cc.convertTo0to1(static_cast<float>(temp_m.getControllerValue()));
+                        v = (v * (temp_mapping->range.end - temp_mapping->range.start)) + temp_mapping->range.start;
+                        temp_mapping->param->setValueNotifyingHost(map_from_cc.convertTo0to1(v));
                         temp_mapping->param->endChangeGesture();
                     }
                 }

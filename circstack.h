@@ -18,13 +18,13 @@ namespace ParameterMapper
 template <typename T, size_t N = 128>
 struct circstack
 {
-    circstack(T def)
+    circstack(T def) : write(1)
     {
         buffer.fill(def);
     }
 
     std::array<T, N> buffer;
-    size_t write = 1;
+    size_t write;
 
     void push(T t)
     {

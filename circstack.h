@@ -24,7 +24,7 @@ struct circstack
     }
 
     std::array<T, N> buffer;
-    size_t write;
+    size_t write = 1;
 
     void push(T t)
     {
@@ -62,9 +62,12 @@ struct circstack
         if (write == 0)
         {
             write = N - 1;
+            return buffer[N - 1];
         }
-
-        return buffer[--write];
+        else
+        {
+            return buffer[--write];
+        }
     }
 
     T top()
